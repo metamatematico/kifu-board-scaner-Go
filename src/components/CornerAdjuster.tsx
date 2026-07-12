@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Check, RefreshCw, ScanLine } from "lucide-react";
-import { Corners, Point } from "../types";
+import { BoardSize, Corners, Point, Stone } from "../types";
 import { detectCorners } from "../lib/cornerDetection";
-import { warpAndEncode } from "../lib/perspectiveWarp";
+import { rectifyBoard, canvasToJpegBase64 } from "../lib/perspectiveWarp";
+import { detectStonesClassically } from "../lib/stoneDetection";
 import { loadImage } from "../lib/loadImage";
 
 interface CornerAdjusterProps {
   imageDataUrl: string;
-  onConfirm: (base64Jpeg: string) => void;
+  boardSize: BoardSize;
+  onConfirm: (previewDataUrl: string, stones: Stone[]) => void;
   onCancel: () => void;
 }
 
@@ -16,7 +18,7 @@ type Status = "detecting" | "auto" | "fallback";
 
 const CORNER_KEYS: CornerKey[] = ["topLeft", "topRight", "bottomRight", "bottomLeft"];
 
-export default function CornerAdjuster({ imageDataUrl, onConfirm, onCancel }: CornerAdjusterProps) {
+export default function CornerAdjuster({ imageDataUrl, boardSize, onConfirm, onCancel }: CornerAdjusterProps) {
   // Offscreen, never-rendered image used for all OpenCV work (detection + warp) —
   // see loadImage.ts for why this must be separate from the visible <img> below.
   const sourceImgRef = useRef<HTMLImageElement | null>(null);
@@ -88,8 +90,10 @@ export default function CornerAdjuster({ imageDataUrl, onConfirm, onCancel }: Co
     setIsWarping(true);
     setWarpError(null);
     try {
-      const base64 = await warpAndEncode(img, corners);
-      onConfirm(base64);
+      const rectifiedCanvas = await rectifyBoard(img, corners);
+      const stones = detectStonesClassically(rectifiedCanvas, boardSize);
+      const previewDataUrl = `data:image/jpeg;base64,${canvasToJpegBase64(rectifiedCanvas)}`;
+      onConfirm(previewDataUrl, stones);
     } catch (err: any) {
       setWarpError(err.message || "No se pudo procesar la imagen.");
     } finally {
@@ -164,6 +168,9 @@ export default function CornerAdjuster({ imageDataUrl, onConfirm, onCancel }: Co
           {status === "auto" && "Esquinas detectadas automáticamente — ajusta si es necesario"}
           {status === "fallback" && "No se detectó el tablero automáticamente — ajusta las esquinas manualmente"}
           {status === "detecting" && "Analizando imagen..."}
+        </p>
+        <p className="text-[9px] font-mono text-slate-500 mt-1 leading-relaxed">
+          Alinea cada esquina con la intersección extrema de la cuadrícula (no con el borde de madera del tablero) — de eso depende la precisión de la detección de piedras.
         </p>
         {warpError && <p className="text-[10px] font-mono text-rose-400 mt-1">{warpError}</p>}
       </div>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Camera, Upload, RefreshCw, AlertCircle, X, ShieldAlert } from "lucide-react";
+import { Camera, Upload, AlertCircle, X } from "lucide-react";
 import { BoardSize, Stone } from "../types";
 import CornerAdjuster from "./CornerAdjuster";
 
@@ -16,8 +16,6 @@ export default function BoardScanner({
 }: BoardScannerProps) {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progressStep, setProgressStep] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<{ dataUrl: string; mimeType: string } | null>(null);
@@ -25,27 +23,6 @@ export default function BoardScanner({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Animated scanner step phrases
-  const steps = [
-    "Inicializando motor de visión artificial de Gemini...",
-    "Alineando cuadrícula del tablero...",
-    "Detectando intersecciones y esquinas...",
-    "Clasificando piedras blancas y negras...",
-    "Verificando simetría de juego y exportando SGF...",
-  ];
-
-  // Rotate through steps during mock/real loading
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isProcessing) {
-      setProgressStep(0);
-      interval = setInterval(() => {
-        setProgressStep((prev) => (prev < steps.length - 1 ? prev + 1 : prev));
-      }, 2500);
-    }
-    return () => clearInterval(interval);
-  }, [isProcessing]);
 
   // Clean up stream on unmount
   useEffect(() => {
@@ -84,42 +61,6 @@ export default function BoardScanner({
       setCameraStream(null);
     }
     setIsCameraActive(false);
-  };
-
-  // Call the server API to analyze the image
-  const analyzeImage = async (base64Image: string, mimeType: string) => {
-    setIsProcessing(true);
-    setErrorMsg(null);
-    try {
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          image: base64Image,
-          mimeType: mimeType,
-          boardSize: boardSize,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Error al procesar la imagen.");
-      }
-
-      const data = await response.json();
-      
-      // Store image preview URL in success
-      const previewUrl = `data:${mimeType};base64,${base64Image}`;
-      onScanSuccess(data.boardSize as BoardSize, data.stones as Stone[], previewUrl);
-    } catch (err: any) {
-      console.error("Analysis failed:", err);
-      setErrorMsg(err.message || "Error al analizar la imagen. Intenta con una foto con mejor luz o más centrada.");
-      onScanError(err.message || "Error al analizar la imagen.");
-    } finally {
-      setIsProcessing(false);
-    }
   };
 
   // Capture Image from Video Stream
@@ -163,10 +104,20 @@ export default function BoardScanner({
     reader.readAsDataURL(file);
   };
 
-  // Called once the user confirms the rectified crop from CornerAdjuster
-  const handleCornersConfirmed = (base64Jpeg: string) => {
+  // Called once the user confirms the rectified crop from CornerAdjuster — stones
+  // are already detected client-side (classical CV, no network call involved).
+  // CornerAdjuster surfaces its own errors inline, but this try/catch is a safety
+  // net for anything unexpected that slips through so the user still sees feedback.
+  const handleCornersConfirmed = (previewDataUrl: string, stones: Stone[]) => {
     setCapturedImage(null);
-    analyzeImage(base64Jpeg, "image/jpeg");
+    setErrorMsg(null);
+    try {
+      onScanSuccess(boardSize, stones, previewDataUrl);
+    } catch (err: any) {
+      const message = err.message || "Error inesperado al procesar el escaneo.";
+      setErrorMsg(message);
+      onScanError(message);
+    }
   };
 
   // Drag and Drop support
@@ -220,34 +171,10 @@ export default function BoardScanner({
         {/* Hidden processing canvas */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {isProcessing ? (
-          <div className="aspect-square w-full rounded-none bg-slate-900 flex flex-col items-center justify-center p-8 text-center overflow-hidden relative border border-slate-800">
-            {/* Pulsing light circles background */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(99,102,241,0.08)_0%,transparent_60%)]" />
-            
-            {/* Animated Laser Scanning Line */}
-            <div className="absolute left-0 right-0 h-0.5 bg-sky-400 shadow-[0_0_15px_#38bdf8] animate-[bounce_3s_infinite]" />
-
-            <div className="relative z-10 flex flex-col items-center">
-              <RefreshCw className="w-8 h-8 text-sky-400 animate-spin mb-4" />
-              <h3 className="text-white font-mono text-xs uppercase tracking-widest mb-2">Processing POV...</h3>
-              
-              {/* Steps Progress Visual */}
-              <div className="w-48 bg-slate-800 h-1 mb-4 overflow-hidden rounded-none">
-                <div 
-                  className="bg-sky-500 h-full transition-all duration-1000 ease-out"
-                  style={{ width: `${((progressStep + 1) / steps.length) * 100}%` }}
-                />
-              </div>
-
-              <p className="text-[10px] text-slate-400 font-mono h-8 max-w-xs animate-pulse leading-normal">
-                {steps[progressStep]}
-              </p>
-            </div>
-          </div>
-        ) : capturedImage ? (
+        {capturedImage ? (
           <CornerAdjuster
             imageDataUrl={capturedImage.dataUrl}
+            boardSize={boardSize}
             onConfirm={handleCornersConfirmed}
             onCancel={() => setCapturedImage(null)}
           />
@@ -351,7 +278,7 @@ export default function BoardScanner({
 
       <div className="mt-4 bg-slate-50 p-4 rounded-none text-[11px] text-slate-500 leading-relaxed border border-slate-200/80 font-mono">
         <span className="font-bold text-slate-900 block mb-1 uppercase tracking-wider text-[10px]">💡 DETECT_INFO:</span>
-        Intenta centrar el tablero, tener buena luz y colocar la cámara directamente encima del tablero (vista cenital) para que Gemini AI pueda alinear perfectamente la cuadrícula y las piedras.
+        Intenta centrar el tablero, tener buena luz y colocar la cámara directamente encima del tablero (vista cenital) para que la detección por visión por computadora pueda alinear perfectamente la cuadrícula y las piedras.
       </div>
     </div>
   );

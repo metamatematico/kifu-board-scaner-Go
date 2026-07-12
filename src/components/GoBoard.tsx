@@ -1,11 +1,35 @@
 import { useState } from "react";
-import { Stone, BoardSize, ToolMode } from "../types";
+import { Stone, BoardSize, ToolMode, EnergyPoint } from "../types";
+
+interface TerritoryPoint {
+  x: number;
+  y: number;
+  owner: "black" | "white";
+}
 
 interface GoBoardProps {
   boardSize: BoardSize;
   stones: Stone[];
   onIntersectionClick: (x: number, y: number) => void;
   toolMode: ToolMode;
+  territoryOverlay?: TerritoryPoint[];
+  energyOverlay?: EnergyPoint[];
+}
+
+// Diverging color for the Hamiltonian energy field: negative (black-leaning)
+// -> sky blue, positive (white-leaning) -> rose — the same two hues already
+// used for "negro"/"blanco" in the game-evolution charts, so the same color
+// means the same player everywhere in the app. Opacity scales with the
+// theoretical [-2, 2] range (not a per-frame max) so a decisive point always
+// reads with the same intensity, regardless of how extreme other points are.
+const ENERGY_BLACK = "56, 189, 248"; // sky-400
+const ENERGY_WHITE = "251, 113, 133"; // rose-400
+const ENERGY_MAX_ABS = 2;
+
+function energyColor(value: number): { fill: string; opacity: number } {
+  const t = Math.max(-1, Math.min(1, value / ENERGY_MAX_ABS));
+  const fill = t < 0 ? ENERGY_BLACK : ENERGY_WHITE;
+  return { fill, opacity: Math.abs(t) * 0.55 };
 }
 
 export default function GoBoard({
@@ -13,6 +37,8 @@ export default function GoBoard({
   stones,
   onIntersectionClick,
   toolMode,
+  territoryOverlay,
+  energyOverlay,
 }: GoBoardProps) {
   const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null);
 
@@ -107,6 +133,26 @@ export default function GoBoard({
             </radialGradient>
           </defs>
 
+          {/* 0.5. Energy Field Heatmap (Hamiltonian, painted under everything else) */}
+          {energyOverlay && energyOverlay.length > 0 && (
+            <g pointerEvents="none">
+              {energyOverlay.map((p) => {
+                const { fill, opacity } = energyColor(p.value);
+                if (opacity <= 0.02) return null;
+                return (
+                  <rect
+                    key={`energy-${p.x}-${p.y}`}
+                    x={getSvgCoord(p.x) - cellSize / 2}
+                    y={getSvgCoord(p.y) - cellSize / 2}
+                    width={cellSize}
+                    height={cellSize}
+                    fill={`rgba(${fill}, ${opacity.toFixed(3)})`}
+                  />
+                );
+              })}
+            </g>
+          )}
+
           {/* 1. Grid Lines */}
           <g stroke="#3a2510" strokeWidth="1" opacity="0.8" strokeLinecap="square">
             {/* Vertical Lines */}
@@ -180,6 +226,25 @@ export default function GoBoard({
               );
             })}
           </g>
+
+          {/* 3.5. Territory Overlay (scoring markers, drawn under stones/hover) */}
+          {territoryOverlay && territoryOverlay.length > 0 && (
+            <g>
+              {territoryOverlay.map((p) => (
+                <circle
+                  key={`territory-${p.x}-${p.y}`}
+                  cx={getSvgCoord(p.x)}
+                  cy={getSvgCoord(p.y)}
+                  r={cellSize * 0.16}
+                  fill={p.owner === "black" ? "#1e293b" : "#f8fafc"}
+                  stroke={p.owner === "black" ? "none" : "#94a3b8"}
+                  strokeWidth="0.75"
+                  opacity="0.55"
+                  pointerEvents="none"
+                />
+              ))}
+            </g>
+          )}
 
           {/* 4. Hover Ghost Stone Preview */}
           {hoveredCell && toolMode !== "none" && !findStone(hoveredCell.x, hoveredCell.y) && (

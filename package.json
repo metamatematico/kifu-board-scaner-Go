@@ -1,8 +1,12 @@
 {
-  "name": "react-example",
+  "name": "kifu-board-scanner",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "authors": [
+    { "name": "Leonardo Jiménez", "url": "https://github.com/metamatematico" },
+    { "name": "Mario Mercado", "url": "https://github.com/ometitlan" }
+  ],
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",

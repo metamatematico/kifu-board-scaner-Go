@@ -1,0 +1,6 @@
+{
+  "name": "Kifu Board Scanner",
+  "description": "Una aplicación inspirada en Kifu Snap para digitalizar tableros de Go (Weiqi/Baduk) usando inteligencia artificial. Sube una foto, detecta la posición de las piedras y exporta a formato SGF.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

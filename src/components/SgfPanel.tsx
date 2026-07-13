@@ -1,12 +1,14 @@
 import React, { useState } from "react";
-import { Copy, Check, Download, FileJson, ArrowRight } from "lucide-react";
+import { Copy, Check, Download, FileJson, ArrowRight, ChevronUp, ChevronDown } from "lucide-react";
 
 interface SgfPanelProps {
   sgf: string;
   onImportSgf: (sgf: string) => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export default function SgfPanel({ sgf, onImportSgf }: SgfPanelProps) {
+export default function SgfPanel({ sgf, onImportSgf, collapsed = false, onToggleCollapse }: SgfPanelProps) {
   const [copied, setCopied] = useState(false);
   const [pastedSgf, setPastedSgf] = useState("");
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -52,16 +54,27 @@ export default function SgfPanel({ sgf, onImportSgf }: SgfPanelProps) {
           JSON Response / SGF Output
         </h2>
         <div className="flex gap-2">
-          <button
-            onClick={() => setIsImportOpen(!isImportOpen)}
-            className="text-[10px] uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded-none transition-colors border border-slate-700"
-          >
-            {isImportOpen ? "Ver SGF" : "Importar"}
-          </button>
+          {!collapsed && (
+            <button
+              onClick={() => setIsImportOpen(!isImportOpen)}
+              className="text-[10px] uppercase tracking-wider bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-2.5 py-1 rounded-none transition-colors border border-slate-700"
+            >
+              {isImportOpen ? "Ver SGF" : "Importar"}
+            </button>
+          )}
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-none transition-colors border border-slate-700"
+              title={collapsed ? "Expandir" : "Colapsar"}
+            >
+              {collapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+            </button>
+          )}
         </div>
       </div>
 
-      {!isImportOpen ? (
+      {collapsed ? null : !isImportOpen ? (
         <>
           {/* SGF Code Output box */}
           <div className="relative">

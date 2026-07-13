@@ -1,15 +1,18 @@
-import { useState, useEffect, useMemo } from "react";
-import { 
-  Camera, 
-  Trash2, 
-  RotateCcw, 
-  HelpCircle, 
-  FileCheck, 
+import { useState, useEffect, useMemo, type CSSProperties } from "react";
+import {
+  Camera,
+  Trash2,
+  RotateCcw,
+  HelpCircle,
+  FileCheck,
   Sparkles,
   Layers,
   CircleDot,
   Grid3X3,
-  Undo
+  Undo,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown
 } from "lucide-react";
 import GoBoard from "./components/GoBoard";
 import BoardScanner from "./components/BoardScanner";
@@ -23,6 +26,28 @@ import { findGroups, findTerritoryRegions, findEyes, computeScore } from "./util
 import { precomputeGameHistory } from "./utils/sgfPlayback";
 import { computeEnergyField } from "./utils/hamiltonianEnergy";
 import { computeBoltzmannTemperature } from "./utils/boltzmannTemperature";
+import { energyShannonEntropy } from "./utils/energyEntropy";
+
+// Narrow strip shown in place of a collapsed main column — a fixed-width
+// (56px, via the --colN custom properties on <main>) vertical bar on desktop
+// so the other columns get its freed width, a short horizontal bar on mobile
+// (grid-cols-1 stack) so it isn't squeezed to an unreadable sliver there.
+function CollapsedStrip({ label, onExpand }: { label: string; onExpand: () => void }) {
+  return (
+    <div className="col-span-1 bg-white border border-slate-200 flex flex-row lg:flex-col items-center lg:justify-center gap-2 px-4 py-2 lg:h-full">
+      <button
+        onClick={onExpand}
+        className="p-1 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700 shrink-0"
+        title="Expandir"
+      >
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 font-mono whitespace-nowrap lg:[writing-mode:vertical-rl]">
+        {label}
+      </span>
+    </div>
+  );
+}
 
 export default function App() {
   const [boardSize, setBoardSize] = useState<BoardSize>(19);
@@ -34,6 +59,24 @@ export default function App() {
   const [komi, setKomi] = useState<number>(6.5);
   const [showTerritory, setShowTerritory] = useState<boolean>(true);
   const [showEnergy, setShowEnergy] = useState<boolean>(false);
+  // Manhattan kernel radius for the M1 Hamiltonian (energy field + Boltzmann
+  // temperature both use this) — see src/utils/hamiltonianEnergy.ts.
+  const [manhattanDistance, setManhattanDistance] = useState<number>(1);
+
+  // Collapsible sections — lets the user hide panels they aren't using (e.g.
+  // the image-upload column) so the ones they care about (the energy/entropy
+  // charts) get more room. In-memory only, resets on reload — not persisted,
+  // wasn't asked for and would add scope. Collapsing never unmounts state
+  // (stones, saved games, etc.) — it only hides the rendered content.
+  const [collapsed, setCollapsed] = useState({
+    sourceInput: false,
+    gridReconstruction: false,
+    apiResponse: false,
+    sgfPanel: false,
+    savedGames: false,
+  });
+  const toggleCollapsed = (key: keyof typeof collapsed) =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // Game playback (SGF move-sequence replay)
   const [gameHistory, setGameHistory] = useState<Stone[][] | null>(null);
@@ -58,7 +101,19 @@ export default function App() {
   // "cubic" positional map, see src/utils/hamiltonianEnergy.ts). Recomputes
   // automatically on every playback step since it depends on `stones`, which
   // the playback sync effect below already keeps in lockstep with `currentStep`.
-  const energyField = useMemo(() => computeEnergyField(boardSize, stones), [boardSize, stones]);
+  const energyField = useMemo(
+    () => computeEnergyField(boardSize, stones, manhattanDistance),
+    [boardSize, stones, manhattanDistance]
+  );
+
+  // Explicit numeric readout of the current R's effect — the heatmap color
+  // change alone was too subtle to read reliably (verified: real |energy|
+  // grows only mildly with R), so this number gives an unambiguous signal
+  // that increasing R is genuinely picking up more distant correlation.
+  const meanAbsEnergy = useMemo(() => {
+    if (energyField.length === 0) return 0;
+    return energyField.reduce((sum, p) => sum + Math.abs(p.value), 0) / energyField.length;
+  }, [energyField]);
 
   // Score/temperature/entropy for every precomputed position in the loaded game.
   // Separated from `gameHistory` on purpose: changing komi only needs to redo
@@ -80,7 +135,12 @@ export default function App() {
       const pBlack = s.blackScore / n2;
       const pWhite = (s.whiteStones + s.whiteTerritory) / n2;
 
-      const { beta, observedEnergy } = computeBoltzmannTemperature(boardSize, positionStones);
+      const { beta, observedEnergy, gibbsEntropy } = computeBoltzmannTemperature(
+        boardSize,
+        positionStones,
+        manhattanDistance
+      );
+      const positionEnergyField = computeEnergyField(boardSize, positionStones, manhattanDistance);
 
       return {
         blackScore: s.blackScore,
@@ -88,11 +148,13 @@ export default function App() {
         temperature,
         blackEntropy: binaryEntropy(pBlack),
         whiteEntropy: binaryEntropy(pWhite),
+        meanEnergy: observedEnergy,
         boltzmannBeta: beta,
-        boltzmannEnergy: observedEnergy,
+        gibbsEntropy,
+        energyShannonEntropy: energyShannonEntropy(positionEnergyField),
       };
     });
-  }, [gameHistory, boardSize, komi]);
+  }, [gameHistory, boardSize, komi, manhattanDistance]);
 
   // Drive the visible board from the current playback step whenever a game is loaded.
   useEffect(() => {
@@ -311,7 +373,7 @@ export default function App() {
             <div className="w-4 h-4 border-2 border-white rounded-full"></div>
           </div>
           <span className="text-lg font-extrabold tracking-tight text-slate-900 uppercase">
-            KifuSnap <span className="font-mono text-slate-400 text-xs tracking-normal font-normal lowercase pl-1">api v2.4</span>
+            Kifu Lab Transmedia & Tlacoachines AI <span className="font-mono text-slate-400 text-xs tracking-normal font-normal lowercase pl-1">api v2.4</span>
           </span>
         </div>
         <div className="hidden md:flex gap-8 text-[11px] font-bold uppercase tracking-widest text-slate-500">
@@ -322,16 +384,43 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Main Workspace Grid */}
-      <main className="flex-grow grid grid-cols-1 lg:grid-cols-12 gap-px bg-slate-200">
-        
+      {/* Main Workspace Grid — grid-template-columns is driven by the --col1/2/3
+          custom properties below (see the embedded <style> in the header),
+          only at the lg: breakpoint; grid-cols-1 handles the mobile stack. */}
+      <style>{`
+        @media (min-width: 1024px) {
+          .workspace-grid { grid-template-columns: var(--col1) var(--col2) var(--col3); }
+        }
+      `}</style>
+      <main
+        className="workspace-grid flex-grow grid grid-cols-1 lg:grid-cols-12 gap-px bg-slate-200"
+        style={
+          {
+            "--col1": collapsed.sourceInput ? "56px" : "4fr",
+            "--col2": collapsed.gridReconstruction ? "56px" : "5fr",
+            "--col3": collapsed.apiResponse ? "56px" : "3fr",
+          } as CSSProperties
+        }
+      >
         {/* COLUMN 1: INPUT ANALYSIS (Board Scanner) */}
-        <section className="col-span-1 lg:col-span-4 bg-white p-6 flex flex-col gap-6">
+        {collapsed.sourceInput ? (
+          <CollapsedStrip label="Source Input" onExpand={() => toggleCollapsed("sourceInput")} />
+        ) : (
+        <section className="col-span-1 bg-white p-6 flex flex-col gap-6">
           <div className="flex justify-between items-center border-b border-slate-100 pb-2">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Source Input</h2>
-            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold font-mono rounded-none">
-              {stones.length > 0 ? "IMAGE_LOADED" : "AWAITING_INPUT"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold font-mono rounded-none">
+                {stones.length > 0 ? "IMAGE_LOADED" : "AWAITING_INPUT"}
+              </span>
+              <button
+                onClick={() => toggleCollapsed("sourceInput")}
+                className="p-1 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                title="Colapsar"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <BoardScanner
@@ -396,12 +485,16 @@ export default function App() {
             </div>
           )}
         </section>
+        )}
 
         {/* COLUMN 2: GEOMETRIC RECONSTRUCTION (Go Board Editor) */}
-        <section className="col-span-1 lg:col-span-5 bg-white p-6 flex flex-col items-center">
+        {collapsed.gridReconstruction ? (
+          <CollapsedStrip label="Grid Reconstruction" onExpand={() => toggleCollapsed("gridReconstruction")} />
+        ) : (
+        <section className="col-span-1 bg-white p-6 flex flex-col items-center">
           <div className="w-full flex justify-between items-center mb-6 border-b border-slate-100 pb-3">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">Grid Reconstruction</h2>
-            
+
             {/* Board size selector */}
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono cursor-pointer">
@@ -423,6 +516,23 @@ export default function App() {
                 Mostrar energía (Hamiltoniano)
               </label>
               <div className="flex items-center gap-1">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono mr-1">R:</span>
+                {[1, 2, 3, 4].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setManhattanDistance(r)}
+                    title={`Radio de Manhattan ${r} — afecta el mapa de energía y la entropía de Gibbs / entropía de la energía en el panel derecho`}
+                    className={`px-2 py-1 text-[10px] font-mono font-bold transition-all border ${
+                      manhattanDistance === r
+                        ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1">
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider font-mono mr-1">Size:</span>
                 {( [9, 13, 19] as BoardSize[] ).map((size) => (
                   <button
@@ -438,6 +548,13 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              <button
+                onClick={() => toggleCollapsed("gridReconstruction")}
+                className="p-1 border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                title="Colapsar"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
@@ -453,7 +570,18 @@ export default function App() {
                 }}
               />
               <span>Blanco</span>
-              <span className="text-slate-300 normal-case">— energía (Hamiltoniano clásico spin-1)</span>
+              <span className="text-slate-300 normal-case">
+                — energía (Hamiltoniano M1, R={manhattanDistance}) · media |E|={" "}
+                <span className="text-slate-200 font-bold">{meanAbsEnergy.toFixed(2)}</span>
+              </span>
+            </div>
+          )}
+          {showEnergy && (
+            <div className="w-full text-center text-[8px] font-mono text-slate-400 normal-case leading-snug -mb-1 mt-1 px-4">
+              Cada punto suma la interacción del Hamiltoniano cúbico de M1 con sus vecinos hasta distancia Manhattan R
+              (peso 1/d² por capa) — azul = dominado por negro, rosa = dominado por blanco, intensidad ∝ |energía|.
+              Escala de color fija (no cambia con R): sube R para ver más alcance, no más intensidad por sí solo. El
+              número "media |E|" y las gráficas de energía/entropía del panel derecho usan este mismo cálculo.
             </div>
           )}
 
@@ -615,14 +743,29 @@ export default function App() {
           </div>
           )}
         </section>
+        )}
 
         {/* COLUMN 3: API RESPONSE & HISTORY (SgfPanel & SavedGames) */}
-        <section className="col-span-1 lg:col-span-3 bg-[#1E1E1E] flex flex-col divide-y divide-slate-850">
-          
+        {collapsed.apiResponse ? (
+          <CollapsedStrip label="API Response & History" onExpand={() => toggleCollapsed("apiResponse")} />
+        ) : (
+        <section className="col-span-1 bg-[#1E1E1E] flex flex-col divide-y divide-slate-850">
+          <div className="flex items-center justify-end px-3 py-1.5 bg-[#1E1E1E]">
+            <button
+              onClick={() => toggleCollapsed("apiResponse")}
+              className="p-1 border border-slate-700 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+              title="Colapsar"
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <div className="p-0 shrink-0">
-            <SgfPanel 
-              sgf={currentSgf} 
-              onImportSgf={handleImportSgf} 
+            <SgfPanel
+              sgf={currentSgf}
+              onImportSgf={handleImportSgf}
+              collapsed={collapsed.sgfPanel}
+              onToggleCollapse={() => toggleCollapsed("sgfPanel")}
             />
           </div>
 
@@ -633,6 +776,8 @@ export default function App() {
               onDeleteGame={handleDeleteGame}
               onSaveCurrentGame={handleSaveGame}
               hasStones={stones.length > 0}
+              collapsed={collapsed.savedGames}
+              onToggleCollapse={() => toggleCollapsed("savedGames")}
             />
           </div>
 
@@ -641,6 +786,7 @@ export default function App() {
             <GameChart metricsHistory={metricsHistory} currentStep={currentStep} />
           </div>
         </section>
+        )}
       </main>
 
       {/* Footer Bar */}

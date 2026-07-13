@@ -62,15 +62,21 @@ export interface MetricsStep {
   // Binary Shannon entropy of each color's own board-fraction (stones+territory
   // vs everything else) — kept separate per color (not one joint 3-way value)
   // so each player has their own independent, directly comparable number.
+  // A third, distinct entropy type from the two below (territorial, not
+  // energy-based).
   blackEntropy: number;
   whiteEntropy: number;
-  // Jaynes/MaxEnt statistical inverse temperature of the Hamiltonian energy
-  // field (see src/utils/boltzmannTemperature.ts) — a THIRD, distinct notion
-  // of "temperature" from `temperature` above (|Δscore|) and CGT temperature
-  // (never implemented). Always finite; T=1/beta is derived only where shown
-  // as text, never plotted directly (it diverges at beta≈0).
+  // Mean Hamiltonian energy per site (see src/utils/hamiltonianEnergy.ts).
+  meanEnergy: number;
+  // β: Lagrange multiplier from the Jaynes/MaxEnt derivation — derived/
+  // supporting quantity, not a headline metric (see boltzmannTemperature.ts).
   boltzmannBeta: number;
-  boltzmannEnergy: number;
+  // Shannon/Gibbs entropy (nats) of the max-entropy distribution at `boltzmannBeta`
+  // — the direct energy→information readout, bounded to [0, ln 3].
+  gibbsEntropy: number;
+  // Shannon entropy (nats) of the SPATIAL |energy| distribution across the
+  // board — a second, independent entropy type (see src/utils/energyEntropy.ts).
+  energyShannonEntropy: number;
 }
 
 export interface SavedGame {

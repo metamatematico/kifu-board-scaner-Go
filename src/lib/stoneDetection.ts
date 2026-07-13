@@ -358,16 +358,29 @@ export function detectStonesClassically(canvas: HTMLCanvasElement, boardSize: Bo
     // from every grid point instead (an earlier attempt) backfired — shadowed
     // wood's texture turned out to overlap real stones' texture too much for
     // an unsupervised 2-way split to land in the right place.
-    const trustedTextures = [...provisionalClaims.values()]
-      .filter((c) => classifyByIntensity(c.innerMean, cluster, 0.15) === c.label)
-      .map((c) => c.texture)
-      .sort((a, b) => a - b);
-    const textureCeiling =
-      trustedTextures.length > 0 ? trustedTextures[Math.floor(trustedTextures.length / 2)] * 1.3 : Infinity;
+    //
+    // Calibrated PER COLOR, not shared: black and white stones can have
+    // genuinely different baseline texture (e.g. a rendered/digital board
+    // where black stones carry a subtle gradient/highlight white stones
+    // don't). A shared ceiling silently zeroes out an entire color whenever
+    // Hough's confirmed claims happen to skew to the other color — found on
+    // a real digital kifu diagram where all Hough-confirmed stones were
+    // white, which starved every real black stone's fallback classification
+    // even though brightness clustering was highly confident about them.
+    const textureCeilingFor = (color: StoneColor): number => {
+      const trusted = [...provisionalClaims.values()]
+        .filter((c) => c.label === color && classifyByIntensity(c.innerMean, cluster, 0.15) === color)
+        .map((c) => c.texture)
+        .sort((a, b) => a - b);
+      return trusted.length > 0 ? trusted[Math.floor(trusted.length / 2)] * 1.3 : Infinity;
+    };
+    const textureCeilingBlack = textureCeilingFor("black");
+    const textureCeilingWhite = textureCeilingFor("white");
+    const textureCeilingByColor: Record<StoneColor, number> = { black: textureCeilingBlack, white: textureCeilingWhite };
 
     const claimed = new Map<string, StoneColor>();
     for (const claim of provisionalClaims.values()) {
-      if (claim.texture > textureCeiling) continue;
+      if (claim.texture > textureCeilingByColor[claim.label]) continue;
       claimed.set(claim.key, claim.label);
     }
 
@@ -395,7 +408,7 @@ export function detectStonesClassically(canvas: HTMLCanvasElement, boardSize: Bo
         // count, not "merely on the black/white side of wood".
         const label = classifyByIntensity(sample.mean, cluster, 0.3);
         if (label === "wood") continue;
-        if (sample.texture > textureCeiling) continue;
+        if (sample.texture > textureCeilingByColor[label]) continue;
         stones.push({ x: sample.col, y: sample.row, color: label });
       }
     }

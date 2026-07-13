@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { History, Trash2, FolderOpen, Save, FileSpreadsheet, PlusCircle } from "lucide-react";
+import { History, Trash2, FolderOpen, Save, FileSpreadsheet, PlusCircle, ChevronUp, ChevronDown } from "lucide-react";
 import { SavedGame } from "../types";
 
 interface SavedGamesProps {
@@ -8,6 +8,8 @@ interface SavedGamesProps {
   onDeleteGame: (id: string) => void;
   onSaveCurrentGame: (name: string, notes?: string) => void;
   hasStones: boolean;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export default function SavedGames({
@@ -16,6 +18,8 @@ export default function SavedGames({
   onDeleteGame,
   onSaveCurrentGame,
   hasStones,
+  collapsed = false,
+  onToggleCollapse,
 }: SavedGamesProps) {
   const [newGameName, setNewGameName] = useState("");
   const [newGameNotes, setNewGameNotes] = useState("");
@@ -45,19 +49,30 @@ export default function SavedGames({
           Library (Historial)
         </h2>
         
-        {hasStones && !isSaving && (
-          <button
-            onClick={() => setIsSaving(true)}
-            className="flex items-center gap-1.5 px-3 py-1 bg-slate-900 hover:bg-slate-950 text-white rounded-none text-[10px] uppercase tracking-wider font-bold transition-colors"
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            Guardar Tablero
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {hasStones && !isSaving && !collapsed && (
+            <button
+              onClick={() => setIsSaving(true)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-slate-900 hover:bg-slate-950 text-white rounded-none text-[10px] uppercase tracking-wider font-bold transition-colors"
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              Guardar Tablero
+            </button>
+          )}
+          {onToggleCollapse && (
+            <button
+              onClick={onToggleCollapse}
+              className="p-1 bg-white hover:bg-slate-100 text-slate-500 rounded-none transition-colors border border-slate-200"
+              title={collapsed ? "Expandir" : "Colapsar"}
+            >
+              {collapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Save Game Form */}
-      {isSaving && (
+      {!collapsed && isSaving && (
         <form onSubmit={handleSave} className="bg-slate-50 p-4 border border-slate-200 rounded-none flex flex-col gap-3">
           <h3 className="text-[10px] font-bold text-slate-900 uppercase tracking-wider">Guardar Estado del Tablero</h3>
           
@@ -104,7 +119,7 @@ export default function SavedGames({
       )}
 
       {/* Games List */}
-      {savedGames.length === 0 ? (
+      {!collapsed && (savedGames.length === 0 ? (
         <div className="py-8 text-center flex flex-col items-center justify-center">
           <div className="w-10 h-10 rounded-none bg-slate-50 border border-slate-200 flex items-center justify-center mb-3 text-slate-400">
             <FileSpreadsheet className="w-4 h-4 text-slate-500" />
@@ -158,7 +173,7 @@ export default function SavedGames({
             </div>
           ))}
         </div>
-      )}
+      ))}
     </div>
   );
 }

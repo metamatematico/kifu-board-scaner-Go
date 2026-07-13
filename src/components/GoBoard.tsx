@@ -19,15 +19,27 @@ interface GoBoardProps {
 // Diverging color for the Hamiltonian energy field: negative (black-leaning)
 // -> sky blue, positive (white-leaning) -> rose — the same two hues already
 // used for "negro"/"blanco" in the game-evolution charts, so the same color
-// means the same player everywhere in the app. Opacity scales with the
-// theoretical [-2, 2] range (not a per-frame max) so a decisive point always
-// reads with the same intensity, regardless of how extreme other points are.
+// means the same player everywhere in the app.
+//
+// Deliberately fixed at the R=1 theoretical max (8), NOT rescaled per
+// Manhattan radius R even though hamiltonianEnergy.ts's energyMaxAbs(R) grows
+// with R. Measured directly on a real game: that theoretical bound assumes
+// every neighbor in the kernel is simultaneously an extreme same-signed
+// stone, which never happens on a real mixed board — the ACTUAL achieved
+// |energy| barely grows with R (max ~6→~8, mean ~1.2→~2.0 from R=1 to R=4 on
+// a real midgame position), while the theoretical bound grows much faster
+// (8→16.7). Rescaling by the theoretical bound therefore made the map look
+// almost identical at every R — the two effects (real energy rising, but
+// the denominator rising faster) nearly cancelled out. Fixing the reference
+// at R=1's bound instead means the board visibly gets MORE saturated as R
+// increases, which is the actually-true and actually-legible signal: more
+// distant correlation reach shows up as more color, not the same color.
 const ENERGY_BLACK = "56, 189, 248"; // sky-400
 const ENERGY_WHITE = "251, 113, 133"; // rose-400
-const ENERGY_MAX_ABS = 2;
+const ENERGY_REFERENCE_MAX_ABS = 8;
 
 function energyColor(value: number): { fill: string; opacity: number } {
-  const t = Math.max(-1, Math.min(1, value / ENERGY_MAX_ABS));
+  const t = Math.max(-1, Math.min(1, value / ENERGY_REFERENCE_MAX_ABS));
   const fill = t < 0 ? ENERGY_BLACK : ENERGY_WHITE;
   return { fill, opacity: Math.abs(t) * 0.55 };
 }
